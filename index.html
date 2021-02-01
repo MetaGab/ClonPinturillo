@@ -1,0 +1,289 @@
+<!doctype html>
+<html>
+  <head>
+    <style>
+      *{box-sizing: border-box;}
+      #messages-list li { padding: 5px 10px; }
+      #messages-list li:nth-child(odd) { background: #eee; }
+    </style>
+  </head>
+  <body style="margin: 0; padding: 0;  font-family: Arial, Helvetica, sans-serif;">
+    <div id="preGameDiv">
+      <div style="width: 100vw;  height: 100vh; display: flex; justify-content: space-evenly; align-items: center;">
+        <div>
+          <form id="enterGame">
+            <input id="textName" type="text"><button>Entrar</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div style="width: 5%; display:inline-block; padding-left: 5%; font-size:30px; font-weight: bold;" id="timerDiv"></div>
+    <div style="width: 80%; display:inline-block; text-align: center; font-size: 30px; font-weight: bold;" id="wordHelpDiv">
+    </div>
+    <div style="width: 100%; box-sizing: border-box; padding:15px; display: none; justify-content: center;" id="gameDiv">
+      <div style="width:15%; height: 600px; display: inline-block;">
+          <button id="startButton" style="display: none;">Iniciar juego</button>
+          <div style="height: 50%;" id="users">
+          </div>
+          <div style="height: 50%; ">
+            <label style="font-weight: bold;">Color</label><br>
+            <input id="colorInput" type="color"> <br><br>
+            <label style="font-weight: bold;">Grosor</label><br>
+            <input id="rangeInput" type="range" value="4" min="1" max="30"><br><br>
+            <button id="borrarBoton">Borrar</button> <br>
+          </div>
+      </div>
+      <div style="width: 800px; display: inline-block;">
+          <div id="hideCanvas" style="justify-content: center; align-items: center; width:802px; height: 602px;background-color: lightgray; position: absolute; display: none;">
+            <div id="wordsDiv">
+            </div>
+          </div>
+          <canvas id="canvas" width="800" height="600" style="border:1px solid #000000; margin: 0 auto">
+          </canvas>
+      </div>
+      <div style="width:15%; height:605px; display: flex; flex-wrap:wrap; ">
+        <div id="messages" style="height:96%; width: 100%; text-align:left; overflow-y:scroll">
+          <ul id="messages-list" style="list-style-type: none; margin: 0; padding: 0; word-wrap: break-word">
+          </ul>
+        </div>
+        <div id="textbox" style="height:5%; width: 100%; text-align: left">
+          <form id="chatForm" style="margin: 0; padding: 0; width: 100%; display: flex">
+            <input id="message-form" type="text" autocomplete="off" style=" height:100%;" />
+            <button style="height:100%">
+              >
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div style="width: 100%; text-align: center; display: none" id="linkRoomDiv">
+      <a id="linkRoom" href="https://morning-everglades-05087.herokuapp.com/">LINK A TU SALA</a>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.3.0/socket.io.js"></script>
+    <script src="https://code.jquery.com/jquery-1.11.1.js"></script>
+    <script>
+      var params = new URLSearchParams(window.location.search)
+      var room = params.get("room")
+      var c = document.getElementById("canvas");
+      var ctx = c.getContext("2d");
+      ctx.lineCap = "round";
+      var drawing = false;
+      var can_draw = true;
+      var prev = null;
+      var color = '#000000';
+      var width = 4;
+      var user ={};
+      var owner = false;
+      var time = 80;
+      var timer = "";
+
+      function getRandomCode() {
+        owner = true;
+        const letters = '0123456789ABCDEF';
+        var code = '';
+        for (var i = 0; i < 6; i++) {
+          code += letters[Math.floor(Math.random() * 16)];
+        }
+        return code;
+      }
+      
+      function drawStep(prev, next, color, width){
+        ctx.beginPath();
+        ctx.moveTo(prev[0], prev[1]);
+        ctx.lineTo(next[0], next[1]);
+        ctx.lineWidth = width;
+        ctx.strokeStyle = color;
+        ctx.stroke();
+      }
+      
+      function timerStep(){
+        time--;
+        $("#timerDiv").text(time);
+        if(time==0){
+          clearInterval(timer);
+        }
+      }
+
+
+      $('#enterGame').submit(function(e) {
+          e.preventDefault();
+          if(!room){
+            room = getRandomCode();
+          }
+          user = {
+            name: $("#textName").val(),
+            room: room
+          }
+          
+          var socket = io({query: {room: room}});
+          $("#linkRoom").attr("href", `https://morning-everglades-05087.herokuapp.com/?room=${room}`);
+          socket.emit('enter room', user);
+          $("#preGameDiv").slideUp();
+          $("#gameDiv").css("display", "flex");
+          $("#linkRoomDiv").slideDown();
+          if(owner){
+            $("#startButton").slideDown();
+          }
+          $("#startButton").click(function(e){
+            $("#startButton").slideUp();
+            socket.emit("start game", room);
+            drawing = false;
+            ctx.clearRect(0,0,800,600);
+            can_draw = false;
+          })
+
+          socket.on('start game', function(msg){
+            drawing = false;
+            ctx.clearRect(0,0,800,600);
+            can_draw = false;
+          })
+
+          socket.on('update score', function(msg){
+            if(timer != ""){
+              clearInterval(timer);
+            }
+            $('#users').html("");
+            msg = msg.sort(function compare(a,b){
+              if(a.points<b.points) return 1;
+              if(a.points>b.points) return -1;
+              return 0;
+            }).forEach((u, i) => {
+              var user = $("<div id='user'>").text((i+1)+" - " +u.name+": "+u.points);
+              if(u.drawer){
+                user.css("background-color", 'yellow')
+              }
+              $("#users").append(user)              
+            
+            });
+          })
+
+          socket.on('choose word', function(msg){
+            can_draw = true;
+            $("#wordsDiv").html("");
+            $("#hideCanvas").css("display", "flex");
+            msg.forEach(b => {
+              var button = $("<button class='buttonWord'>").text(b).css("font-size","30px").css("margin","20px")
+              $("#wordsDiv").append(button);
+              button.click(function(e){
+                $("#wordHelpDiv").text(b);
+                socket.emit('choose word', {room:room, word:b});
+                $("#hideCanvas").css("display", "none");
+                time = 80;
+                $("#timerDiv").text(time);
+                timer = setInterval(timerStep, 1000)
+              })
+              
+            })
+          })
+
+          socket.on('start round', function(msg){
+            $("#wordHelpDiv").text("_ ".repeat(msg));
+            time = 80;
+            $("#timerDiv").text(time);
+            timer = setInterval(timerStep, 1000)
+          })
+
+          socket.on('chat message', function(msg){  
+              if(msg.server){
+              $('#messages-list').append($('<li>').html("<b>"+
+                  msg.message+"</b>"));
+              }
+              else{
+              $('#messages-list').append($('<li>').html("<b>"+
+                  msg.name+": </b>"+msg.message));
+              }
+              $('#messages').scrollTop($('#messages').height());
+          });
+          socket.on('disconnected', function(msg){
+            $("#users").html("");
+            msg.forEach(u => {
+              $("#users").append($("<div id='user'>").text(u.name))              
+            });
+          })
+
+          
+          $("#borrarBoton").click(function(e){
+            if(can_draw){
+              ctx.clearRect(0,0,800,600);
+              socket.emit("clear", {room:room})
+
+            }
+          })
+
+          socket.on("clear", function(msg){
+            ctx.clearRect(0,0,800,600);
+          })
+
+
+          $("#users").append($("<div id='user'>").text(user.name))
+            
+          $('#chatForm').submit(function(e) {
+              e.preventDefault();
+              socket.emit('chat message', {room:room, message:$('#message-form').val()});
+              $('#message-form').val('');
+              return false;
+          });
+          $("#colorInput").change(function(){
+            color = $(this).val();
+          })
+
+          $("#rangeInput").on('input', function(){
+            width = parseInt($(this).val());
+          })
+
+          $('#canvas').on('mousedown touchstart', function(e){
+            if(!can_draw){return};
+            drawing = true;
+            var rect = c.getBoundingClientRect();
+            var x = e.clientX - rect.left;
+            var y = e.clientY - rect.top;
+            if(typeof e.originalEvent.changedTouches !== 'undefined'){
+              x = e.originalEvent.changedTouches[0].pageX - rect.left;
+              y = e.originalEvent.changedTouches[0].pageY - rect.top;
+            }
+            prev = [x, y];
+          })
+
+          $('#canvas').on('mousemove touchmove', function(e){
+            if (drawing){
+              var rect = c.getBoundingClientRect();
+              var x = e.clientX - rect.left;
+              var y = e.clientY - rect.top;
+              if(typeof e.originalEvent.changedTouches !== 'undefined'){
+                  x = e.originalEvent.changedTouches[0].pageX - rect.left;
+                  y = e.originalEvent.changedTouches[0].pageY - rect.top;
+              }
+              var next = [x,y];
+              drawStep(prev, next, color, width);
+              socket.emit('update canvas', [prev, next, color, width, room]);
+              prev = next;
+            }
+          })
+
+          $('#canvas').on('mouseup touchend', function(e){
+            if(drawing){
+              drawing=false;
+            }
+          })
+
+          socket.on('first connected', function(msg){
+            msg.forEach(u => {
+              $("#users").append($("<div id='user'>").text(u.name))              
+            });
+          })
+
+          socket.on('new user', function(msg){
+            $("#users").append($("<div id='user'>").text(msg))      
+          })
+          
+          socket.on('update canvas', function(msg){
+            drawStep(msg[0], msg[1], msg[2], msg[3]);
+          })
+          return false;
+
+      });
+
+    </script>
+  </body>
+</html>
